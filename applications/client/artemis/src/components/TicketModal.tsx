@@ -16,6 +16,8 @@ interface EditProps {
     boardId: string;
     description: string;
     comment: string;
+    priority: number;
+    closeDate:string|null;
     closeModal: () => void;
     mutateWorkspace: KeyedMutator<IWorkspace>;
 }
@@ -29,14 +31,18 @@ interface NewProps {
     id?: string;
     comment?: string;
     description?: string;
+    priority?:number;
+    closeDate?:string|null;
 }
 
 type Props = NewProps | EditProps;
 
-const TicketModal = ({ id, state, boardId, comment, description, closeModal, mutateWorkspace }: Props): JSX.Element => {
+const TicketModal = ({ id, state, boardId, comment, priority, description, closeDate, closeModal, mutateWorkspace }: Props): JSX.Element => {
 
     const [ticketDescription, setTicketDescription] = useState<string>(description ? description : "");
     const [ticketComment, setTicketComment] = useState<string>(comment ? comment : "");
+    const [ticketPriority, setTicketPriority] = useState<number>(priority? priority : 0);
+    const [ticketClosedDate] = useState<boolean>(closeDate === null? false:true);
     const [canExit, setCanExit] = useState(true);
 
     useEffect(() => {
@@ -45,6 +51,7 @@ const TicketModal = ({ id, state, boardId, comment, description, closeModal, mut
         return () => {
             document.body.style.overflow = "unset";
         }
+        // eslint-disable-next-line
     }, [])
 
     return ReactDOM.createPortal(
@@ -53,6 +60,7 @@ const TicketModal = ({ id, state, boardId, comment, description, closeModal, mut
                 setCanExit(true);
             },0)
         }}>
+            {console.log(closeDate)}
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} className={styles.modalWrapper} onMouseDown={()=>setCanExit(false)} onClick={(e) => { 
                 e.stopPropagation();
             }}>
@@ -81,17 +89,19 @@ const TicketModal = ({ id, state, boardId, comment, description, closeModal, mut
                             produce<IWorkspace>(draft => {
                                 const sourceBoard = draft.boards.find((item) => item.id === boardId);
                                 sourceBoard?.tickets.push({
-                                    // TODO: generate a better id
                                     id: `ticket${Math.floor(Math.random() * 999999999)}`,
                                     description: ticketDescription,
-                                    comment: ticketComment
+                                    comment: ticketComment,
+                                    priority: ticketPriority,
+                                    closeDate: ticketClosedDate?"placeholder":null
                                 })
                             })
                             , false)
                         await postDataAsync(`${getEndpoint("add_ticket_by_boardId")}/${boardId}`, {
                             description: ticketDescription,
-                            comment: ticketComment
-                        })
+                            comment: ticketComment,
+                            priority: ticketPriority
+                        }, false)
                         mutateWorkspace();
                     } else {
                         mutateWorkspace(
@@ -100,13 +110,15 @@ const TicketModal = ({ id, state, boardId, comment, description, closeModal, mut
                                 const sourceTicket = sourceBoard?.tickets?.find((item) => item.id === id);
                                 sourceTicket!.description = ticketDescription;
                                 sourceTicket!.comment = ticketComment;
-                                console.log(sourceTicket)
+                                sourceTicket!.priority = ticketPriority;
                             })
                             , false)
+                            
                         await patchDataAsync(`${getEndpoint("ticket_by_id")}/${id}`, {
                             ticketComment: ticketComment,
-                            ticketDescription: ticketDescription
-                        })
+                            ticketDescription: ticketDescription,
+                            ticketPriority: ticketPriority
+                        }, false)
                     }
                     // TODO: Uncomment out to sync workspace back up with server
                     //await mutateWorkspace();
@@ -125,6 +137,35 @@ const TicketModal = ({ id, state, boardId, comment, description, closeModal, mut
                         }} />
                     </label>
 
+                    <div className={styles.radioWrapper} onClick={(e)=>e.preventDefault()}>
+                        <button style={ticketPriority === 2?{border: "3px solid var(--c-main-gray)"}:{}}className={styles.red} onClick={()=> setTicketPriority(2)}></button>
+                        <button style={ticketPriority === 1?{border: "3px solid var(--c-main-gray)"}:{}}className={styles.yellow} onClick={()=> setTicketPriority(1)}></button>
+                        <button style={ticketPriority === 0?{border: "3px solid var(--c-main-gray)"}:{}}className={styles.blue} onClick={()=> setTicketPriority(0)}></button>
+                    </div>
+                    <button onClick={async(e)=>{
+                        e.preventDefault();
+                        if(!ticketClosedDate){
+                            await fetch(`${getEndpoint("mark_ticket_closed")}/${id}`);
+                            mutateWorkspace(
+                                produce<IWorkspace>(draft => {
+                                    const sourceBoard = draft.boards.find((item) => item.id === boardId);
+                                    const sourceTicket = sourceBoard?.tickets?.find((item) => item.id === id);
+                                    sourceTicket!.closeDate = null;
+                                })
+                            )
+                            closeModal();
+                        }else{
+                            await fetch(`${getEndpoint("mark_ticket_open")}/${id}`);
+                            mutateWorkspace(
+                                produce<IWorkspace>(draft => {
+                                    const sourceBoard = draft.boards.find((item) => item.id === boardId);
+                                    const sourceTicket = sourceBoard?.tickets?.find((item) => item.id === id);
+                                    sourceTicket!.closeDate = "placeholder";
+                                })
+                            )
+                            closeModal();
+                        }
+                    }}>{!ticketClosedDate?"Mark Ticket as Closed":"Mark Ticket as Open"}</button>
                     <button type="submit">{id ? "Update" : "Create"}</button>
                 </form>
             </motion.div>
